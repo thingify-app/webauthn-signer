@@ -1,0 +1,15 @@
+{
+    "name": "webauthn-signer",
+    "scripts": {
+        "build": "parcel build index.html --public-url ./",
+        "serve": "parcel index.html"
+    },
+    "private": true,
+    "devDependencies": {
+        "parcel-bundler": "^1.12.4",
+        "typescript": "^4.0.5"
+    },
+    "browserslist": [
+        "last 1 Chrome version"
+    ]
+}

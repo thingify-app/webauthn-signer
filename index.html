@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>WebAuthn Signer Demo</title>
+    </head>
+    <body>
+        <div>
+            <input type="text" name="username" id="username" placeholder="Username"/>
+            <button id="generateKey">Generate key</button>
+        </div>
+        <hr/>
+        <div>
+            Your accounts:
+            <div id="yourAccounts">None</div>
+        </div>
+        <hr/>
+        <div>
+            <textarea placeholder="Message to sign" id="messageToSign"></textarea><br/>
+            <button id="signDocument">Sign</button>
+            <div id="signature"></div>
+        </div>
+        <hr/>
+        <div>
+            <input type="text" id="publicKey" placeholder="Public key"/><br/>
+            <textarea placeholder="Message to verify" id="messageToVerify"></textarea><br/>
+            <textarea placeholder="Signature to verify" id="signatureToVerify"></textarea><br/>
+            <button id="verifyDocument">Verify</button>
+        </div>
+        <script src="./index.ts"></script>
+    </body>
+</html>
