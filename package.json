@@ -1,7 +1,7 @@
 {
     "name": "webauthn-signer",
     "scripts": {
-        "build": "parcel build index.html --public-url ./",
+        "build": "rm -r dist/ && parcel build index.html --public-url ./",
         "serve": "parcel index.html"
     },
     "private": true,

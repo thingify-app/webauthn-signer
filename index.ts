@@ -1,6 +1,7 @@
 const usernameBox = document.getElementById('username') as HTMLInputElement;
 const generateButton = document.getElementById('generateKey') as HTMLButtonElement;
 const yourAccountsBox = document.getElementById('yourAccounts') as HTMLDivElement;
+const signOutButton = document.getElementById('signOut') as HTMLButtonElement;
 const messageToSign = document.getElementById('messageToSign') as HTMLTextAreaElement;
 const signButton = document.getElementById('signDocument') as HTMLButtonElement;
 const signatureBox = document.getElementById('signature') as HTMLDivElement;
@@ -8,8 +9,9 @@ const publicKeyBox = document.getElementById('publicKey') as HTMLInputElement;
 const messageToVerify = document.getElementById('messageToVerify') as HTMLTextAreaElement;
 const signatureToVerify = document.getElementById('signatureToVerify') as HTMLTextAreaElement;
 const verifyButton = document.getElementById('verifyDocument') as HTMLButtonElement;
+const verifyStatus = document.getElementById('verifyStatus') as HTMLDivElement;
 
-populateYourAccounts();
+populateYourAccount();
 
 generateButton?.addEventListener('click', async () => {
     const username = usernameBox.value;
@@ -20,40 +22,69 @@ generateButton?.addEventListener('click', async () => {
 
     const creds = await createPublicKeyCredentials(stringToArrayBuffer('foobar'), username);
     const publicKey = await importPublicKey(creds.publicKey);
-    console.log(creds.publicKey);
+    console.log(creds);
     console.log(toBase64(creds.publicKey));
-    await savePublicKey(publicKey);
-    populateYourAccounts();
+    await savePublicKey(username, creds.rawId, publicKey);
+    populateYourAccount();
+});
+
+signOutButton?.addEventListener('click', async () => {
+    localStorage.clear();
+    populateYourAccount();
 });
 
 signButton?.addEventListener('click', async () => {
+    const localKey = await loadPublicKey();
+    const userId = localKey ? localKey.rawId : null;
     const message = messageToSign.value;
-    const challenge = stringToArrayBuffer(messageToSign.value);
-    const signedData = await signChallenge(challenge);
+    const challenge = stringToArrayBuffer(message);
+    const signedData = await signChallenge(challenge, userId);
 
-    signatureBox.innerText = JSON.stringify(signedDataToJson(signedData));
+    signatureBox.replaceChildren(createInputBoxElement(JSON.stringify(signedDataToJson(signedData))));
 });
 
 verifyButton?.addEventListener('click', async () => {
-    const spkiKey = fromBase64(publicKeyBox.value);
-    const publicKey = await importPublicKey(spkiKey);
-    
-    const message = messageToVerify.value;
-    const signedData = jsonToSignedData(JSON.parse(signatureToVerify.value));
-    
-    const verified = await verifySignature(publicKey, message, signedData);
-    console.log(`Verified: ${verified}`);
+    try {
+        const spkiKey = fromBase64(publicKeyBox.value);
+        const publicKey = await importPublicKey(spkiKey);
+        
+        const message = messageToVerify.value;
+        const signedData = jsonToSignedData(JSON.parse(signatureToVerify.value));
+
+        const verified = await verifySignature(publicKey, message, signedData);
+        console.log(`Verified: ${verified}`);
+        verifyStatus.innerText = `Verified: ${verified}`;
+    } catch (e) {
+        verifyStatus.innerText = `Error: ${e}`;
+    }
 });
 
-function populateYourAccounts() {
+async function populateYourAccount() {
+    // Reset UI state first.
+    signButton.disabled = true;
+    signOutButton.style.display = 'none';
     yourAccountsBox.innerHTML = '';
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)!;
-        const value = localStorage.getItem(key);
-        const element = document.createElement('div');
-        element.textContent = value;
-        yourAccountsBox.appendChild(element);
+
+    const localPublicKey = await loadPublicKey();
+    if (localPublicKey) {
+        const spki = await crypto.subtle.exportKey('spki', localPublicKey.publicKey);
+        yourAccountsBox.innerText = `${localPublicKey.userId}: `;
+        const keyInput = createInputBoxElement(toBase64(spki));
+        yourAccountsBox.appendChild(keyInput);
+        signButton.disabled = false;
+        signOutButton.style.display = 'block';
+    } else {
+        yourAccountsBox.innerText = 'Signed out.';
+        signButton.disabled = true;
+        signOutButton.style.display = 'none';
     }
+}
+
+function createInputBoxElement(value: string): HTMLInputElement {
+    const input = document.createElement('input');
+    input.value = value;
+    input.readOnly = true;
+    return input;
 }
 
 async function createPublicKeyCredentials(challenge: ArrayBuffer, userId: string): Promise<GeneratedCredentials> {
@@ -67,9 +98,13 @@ async function createPublicKeyCredentials(challenge: ArrayBuffer, userId: string
             name: 'WebAuthn Signer Demo'
         },
         user: {
-            id: Uint8Array.from(userId, c => c.charCodeAt(0)),
+            id: stringToArrayBuffer(userId),
             name: userId,
             displayName: userId
+        },
+        // For some reason, this is required to use e.g. Google Password Manager passkey.
+        authenticatorSelection: {
+            residentKey: 'required'
         }
     };
     const creds = await navigator.credentials.create({
@@ -77,6 +112,7 @@ async function createPublicKeyCredentials(challenge: ArrayBuffer, userId: string
     }) as PublicKeyCredential;
 
     const response = creds.response as AuthenticatorAttestationResponse;
+    console.log(response);
     return {
         rawId: creds.rawId,
         publicKey: response.getPublicKey()!,
@@ -88,26 +124,44 @@ async function importPublicKey(spkiKey: ArrayBuffer): Promise<CryptoKey> {
     return await crypto.subtle.importKey('spki', spkiKey, {name: 'ECDSA', namedCurve: 'P-256'}, true, ['verify']);
 }
 
-async function savePublicKey(key: CryptoKey): Promise<void> {
+async function savePublicKey(userId: string, rawId: ArrayBuffer, key: CryptoKey): Promise<void> {
     const spki = await crypto.subtle.exportKey('spki', key);
-    localStorage.setItem('LOCAL_KEY', toBase64(spki));
+    localStorage.setItem('LOCAL_KEY', JSON.stringify({
+        userId: userId,
+        rawId: toBase64(rawId),
+        spki: toBase64(spki),
+    }));
 }
 
-async function loadPublicKey(): Promise<CryptoKey> {
-    const spki = localStorage.getItem('LOCAL_KEY')!;
-    return await crypto.subtle.importKey('spki', fromBase64(spki), {name: 'ECDSA', namedCurve: 'P-256'}, true, ['verify']);
+async function loadPublicKey(): Promise<SavedKey|null> {
+    const localKey = localStorage.getItem('LOCAL_KEY');
+    if (localKey) {
+        const parsed = JSON.parse(localKey);
+        const publicKey = await crypto.subtle.importKey('spki', fromBase64(parsed.spki), {name: 'ECDSA', namedCurve: 'P-256'}, true, ['verify']);
+        return {
+            userId: parsed.userId,
+            rawId: fromBase64(parsed.rawId),
+            publicKey,
+        };
+    } else {
+        return null;
+    }
 }
 
-async function signChallenge(challenge: ArrayBuffer): Promise<SignedData> {
+async function signChallenge(challenge: ArrayBuffer, rawId: ArrayBuffer|null): Promise<SignedData> {
     const getOptions: PublicKeyCredentialRequestOptions = {
         challenge,
-        allowCredentials: [],
+        allowCredentials: rawId ? [
+            {
+                type: 'public-key',
+                id: rawId
+            }
+        ] : [],
         userVerification: 'required',
-        timeout: 60000
     };
 
     const assertion = await navigator.credentials.get({
-        publicKey: getOptions
+        publicKey: getOptions,
     }) as PublicKeyCredential;
     console.log(assertion);
     const response = assertion.response as AuthenticatorAssertionResponse;
@@ -249,4 +303,10 @@ interface SignedDataJson {
     authenticatorData: string;
     clientData: string;
     signature: string;
+}
+
+interface SavedKey {
+    userId: string;
+    rawId: ArrayBuffer;
+    publicKey: CryptoKey;
 }
