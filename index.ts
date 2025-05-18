@@ -40,7 +40,7 @@ signButton?.addEventListener('click', async () => {
     const challenge = stringToArrayBuffer(message);
     const signedData = await signChallenge(challenge, userId);
 
-    signatureBox.replaceChildren(createInputBoxElement(JSON.stringify(signedDataToJson(signedData))));
+    signatureBox.replaceChildren(createInputBoxElement(signedDataToCompact(signedData)));
 });
 
 verifyButton?.addEventListener('click', async () => {
@@ -49,7 +49,8 @@ verifyButton?.addEventListener('click', async () => {
         const publicKey = await importPublicKey(spkiKey);
         
         const message = messageToVerify.value;
-        const signedData = jsonToSignedData(JSON.parse(signatureToVerify.value));
+        const signedData = compactToSignedData(signatureToVerify.value);
+        console.log(signedData);
 
         const verified = await verifySignature(publicKey, message, signedData);
         console.log(`Verified: ${verified}`);
@@ -271,19 +272,19 @@ function fromBase64(input: string): Uint8Array {
     return Uint8Array.from(atob(input), m => m.codePointAt(0)!);
 }
 
-function signedDataToJson(signedData: SignedData): SignedDataJson {
-    return {
-        authenticatorData: toBase64(signedData.authenticatorData),
-        clientData: toBase64(signedData.clientData),
-        signature: toBase64(signedData.signature),
-    };
+function signedDataToCompact(signedData: SignedData): string {
+    return `${toBase64(signedData.authenticatorData)}.${toBase64(signedData.clientData)}.${toBase64(signedData.signature)}`;
 }
 
-function jsonToSignedData(json: SignedDataJson): SignedData {
+function compactToSignedData(compact: string): SignedData {
+    const parts = compact.split('.', 3);
+    const authenticatorData = fromBase64(parts[0]);
+    const clientData = fromBase64(parts[1]);
+    const signature = fromBase64(parts[2]);
     return {
-        authenticatorData: fromBase64(json.authenticatorData),
-        clientData: fromBase64(json.clientData),
-        signature: fromBase64(json.signature),
+        authenticatorData,
+        clientData,
+        signature
     };
 }
 
@@ -297,12 +298,6 @@ interface SignedData {
     authenticatorData: ArrayBuffer;
     clientData: ArrayBuffer;
     signature: ArrayBuffer;
-}
-
-interface SignedDataJson {
-    authenticatorData: string;
-    clientData: string;
-    signature: string;
 }
 
 interface SavedKey {
