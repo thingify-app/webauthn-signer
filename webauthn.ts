@@ -55,8 +55,13 @@ export async function createKeyPair(storage: Storage, userId: string): Promise<K
     };
 }
 
-export async function loadKeyPair(storage: Storage): Promise<KeyPair|null> {
-    const data = await storage.load(LOCAL_WEBAUTHN_KEY);
+export async function loadKeyPairs(storage: Storage): Promise<KeyPair[]> {
+    const keys = await storage.keys();
+    return Promise.all(keys.map(async userId => await loadKeyPair(storage, userId) as KeyPair));
+}
+
+export async function loadKeyPair(storage: Storage, userId: string): Promise<KeyPair|null> {
+    const data = await storage.load(userId);
     if (data) {
         const parsed = JSON.parse(data);
         const userId = parsed.userId;

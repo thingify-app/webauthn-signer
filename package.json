@@ -11,5 +11,8 @@
     },
     "browserslist": [
         "last 1 Chrome version"
-    ]
+    ],
+    "dependencies": {
+        "idb-keyval": "^6.2.2"
+    }
 }

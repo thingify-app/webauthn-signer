@@ -6,6 +6,16 @@
     </head>
     <body>
         <div>
+            <fieldset>
+                <legend>Crypto Provider</legend>
+                <input type="radio" id="webauthn" name="cryptoProvider" checked/>
+                <label for="webauthn">WebAuthn</label>
+                <input type="radio" id="webcrypto" name="cryptoProvider"/>
+                <label for="webcrypto">Web Crypto</label>
+            </fieldset>
+        </div>
+        <hr/>
+        <div>
             <input type="text" name="username" id="username" placeholder="Username"/>
             <button id="generateKey">Generate key</button>
         </div>

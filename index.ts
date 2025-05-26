@@ -1,8 +1,11 @@
 import { KeyPair, Verifier } from './keypair';
 import { LocalStorage } from './storage';
 import { fromBase64, stringToArrayBuffer, toBase64 } from './utils';
-import { createKeyPair, createVerifier, loadKeyPair } from './webauthn';
+import { createKeyPair as createWebAuthnKeyPair, createVerifier as createWebAuthnVerifier, loadKeyPairs as loadWebAuthnKeyPairs } from './webauthn';
+import { createKeyPair as createWebCryptoKeyPair, createVerifier as createWebCryptoVerifier, loadKeyPairs as loadWebCryptoKeyPairs } from './webcrypto';
 
+const webAuthnRadio = document.getElementById('webauthn') as HTMLInputElement;
+const webCryptoRadio = document.getElementById('webcrypto') as HTMLInputElement;
 const usernameBox = document.getElementById('username') as HTMLInputElement;
 const generateButton = document.getElementById('generateKey') as HTMLButtonElement;
 const yourAccountsBox = document.getElementById('yourAccounts') as HTMLDivElement;
@@ -19,6 +22,14 @@ const verifyStatus = document.getElementById('verifyStatus') as HTMLDivElement;
 const localUserStorage = new LocalStorage();
 populateYourAccount();
 
+// Re-populated depending on which crypto provider is selected.
+webAuthnRadio.addEventListener('click', () => {
+    populateYourAccount();
+});
+webCryptoRadio.addEventListener('click', () => {
+    populateYourAccount();
+});
+
 generateButton?.addEventListener('click', async () => {
     const username = usernameBox.value;
     if (username.length === 0) {
@@ -26,8 +37,7 @@ generateButton?.addEventListener('click', async () => {
         return;
     }
 
-    console.log(localUserStorage);
-    const creds = await createKeyPair(localUserStorage, username);
+    const creds = await createKeyPair(username);
     await creds.save();
     populateYourAccount();
 });
@@ -95,10 +105,40 @@ function createInputBoxElement(value: string): HTMLInputElement {
     return input;
 }
 
+async function createKeyPair(username: string): Promise<KeyPair> {
+    if (selectedCryptoProvider() === 'webauthn') {
+        return await createWebAuthnKeyPair(localUserStorage, username);
+    } else {
+        return await createWebCryptoKeyPair(username);
+    }
+}
+
 async function loadSigner(): Promise<KeyPair|null> {
-    return await loadKeyPair(localUserStorage);
+    let keyPairs: KeyPair[];
+    if (selectedCryptoProvider() === 'webauthn') {
+        keyPairs = await loadWebAuthnKeyPairs(localUserStorage);
+    } else {
+        keyPairs = await loadWebCryptoKeyPairs();
+    }
+    if (keyPairs.length === 0) {
+        return null;
+    } else {
+        return keyPairs[0];
+    }
 }
 
 async function loadVerifier(publicKey: ArrayBuffer): Promise<Verifier> {
-    return await createVerifier(publicKey);
+    if (selectedCryptoProvider() === 'webauthn') {
+        return await createWebAuthnVerifier(publicKey);
+    } else {
+        return await createWebCryptoVerifier(publicKey);
+    }
+}
+
+function selectedCryptoProvider(): 'webauthn'|'webcrypto' {
+    if (webAuthnRadio.checked) {
+        return 'webauthn';
+    } else {
+        return 'webcrypto';
+    }
 }
