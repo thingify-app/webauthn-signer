@@ -3,27 +3,34 @@
     <head>
         <title>WebAuthn Signer Demo</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            button,input,textarea {
+                margin: 2px 0px 2px 0px;
+            }
+        </style>
     </head>
     <body>
         <div>
-            <fieldset>
-                <legend>Crypto Provider</legend>
-                <input type="radio" id="webauthn" name="cryptoProvider" checked/>
-                <label for="webauthn">WebAuthn</label>
-                <input type="radio" id="webcrypto" name="cryptoProvider"/>
-                <label for="webcrypto">Web Crypto</label>
-            </fieldset>
-        </div>
-        <hr/>
-        <div>
             <input type="text" name="username" id="username" placeholder="Username"/>
-            <button id="generateKey">Generate key</button>
+            <button id="signUp">Sign up</button>
         </div>
         <hr/>
         <div>
-            Your account:
-            <div id="yourAccounts">Loading...</div>
-            <button id="signOut">Sign out</button>
+            Your root keys:
+            <div id="yourRootKeys">Loading...</div>
+        </div>
+        <div>
+            <button id="addRootKey">Add root key</button>
+        </div>
+        <hr/>
+        <div>
+            Your node keys:
+            <div id="yourNodeKeys">Loading...</div>
+        </div>
+        <div>
+            <input type="text" name="nodeKeyNickname" id="nodeKeyNickname" placeholder="Nickname"/>
+            <input type="text" name="nodeKey" id="nodeKey" placeholder="Public key"/>
+            <button id="addNodeKey">Add node key</button>
         </div>
         <hr/>
         <div>

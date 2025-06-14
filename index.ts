@@ -1,15 +1,17 @@
-import { KeyPair, Verifier } from './keypair';
+import { KeyPair, Signer, Verifier } from './keypair';
 import { LocalStorage } from './storage';
 import { fromBase64, stringToArrayBuffer, toBase64 } from './utils';
 import { createKeyPair as createWebAuthnKeyPair, createVerifier as createWebAuthnVerifier, loadKeyPairs as loadWebAuthnKeyPairs } from './webauthn';
 import { createKeyPair as createWebCryptoKeyPair, createVerifier as createWebCryptoVerifier, loadKeyPairs as loadWebCryptoKeyPairs } from './webcrypto';
 
-const webAuthnRadio = document.getElementById('webauthn') as HTMLInputElement;
-const webCryptoRadio = document.getElementById('webcrypto') as HTMLInputElement;
 const usernameBox = document.getElementById('username') as HTMLInputElement;
-const generateButton = document.getElementById('generateKey') as HTMLButtonElement;
-const yourAccountsBox = document.getElementById('yourAccounts') as HTMLDivElement;
-const signOutButton = document.getElementById('signOut') as HTMLButtonElement;
+const signUpButton = document.getElementById('signUp') as HTMLButtonElement;
+const yourRootKeysBox = document.getElementById('yourRootKeys') as HTMLDivElement;
+const addRootKeyButton = document.getElementById('addRootKey') as HTMLButtonElement;
+const yourNodeKeysBox = document.getElementById('yourNodeKeys') as HTMLDivElement;
+const nodeKeyNicknameBox = document.getElementById('nodeKeyNickname') as HTMLInputElement;
+const nodeKeyBox = document.getElementById('nodeKey') as HTMLInputElement;
+const addNodeKeyButton = document.getElementById('addNodeKey') as HTMLButtonElement;
 const messageToSign = document.getElementById('messageToSign') as HTMLTextAreaElement;
 const signButton = document.getElementById('signDocument') as HTMLButtonElement;
 const signatureBox = document.getElementById('signature') as HTMLDivElement;
@@ -19,18 +21,13 @@ const signatureToVerify = document.getElementById('signatureToVerify') as HTMLTe
 const verifyButton = document.getElementById('verifyDocument') as HTMLButtonElement;
 const verifyStatus = document.getElementById('verifyStatus') as HTMLDivElement;
 
-const localUserStorage = new LocalStorage();
+const localUserStorage = new LocalStorage('LOCAL_USER');
+const nodeKeyStorage = new LocalStorage('NODE_KEYS');
+
 populateYourAccount();
+populateNodeKeys();
 
-// Re-populated depending on which crypto provider is selected.
-webAuthnRadio.addEventListener('click', () => {
-    populateYourAccount();
-});
-webCryptoRadio.addEventListener('click', () => {
-    populateYourAccount();
-});
-
-generateButton?.addEventListener('click', async () => {
+signUpButton.addEventListener('click', async () => {
     const username = usernameBox.value;
     if (username.length === 0) {
         alert('Please enter a username.');
@@ -42,9 +39,42 @@ generateButton?.addEventListener('click', async () => {
     populateYourAccount();
 });
 
-signOutButton?.addEventListener('click', async () => {
-    localUserStorage.clear();
-    populateYourAccount();
+addRootKeyButton.addEventListener('click', async () => {});
+
+addNodeKeyButton.addEventListener('click', async () => {
+    const nickname = nodeKeyNicknameBox.value;
+    const publicKey = nodeKeyBox.value;
+
+    if (nickname.length === 0) {
+        return alert('Nickname required!');
+    }
+
+    if (publicKey.length === 0) {
+        return alert('Public key required!');
+    }
+
+    try {
+        const spkiKey = fromBase64(nodeKeyBox.value);
+        await loadVerifier(spkiKey);
+    } catch (err) {
+        return alert('Could not parse public key!');
+    }
+
+    const keyPairs = await loadWebAuthnKeyPairs(localUserStorage);
+    const masterKey = keyPairs[0];
+
+    const nodeKeys = await loadNodeKeys(masterKey);
+
+    nodeKeys.push({
+        nickname,
+        publicKey,
+    });
+    
+    await saveNodeKeys(masterKey, nodeKeys);
+    populateNodeKeys();
+
+    nodeKeyNicknameBox.value = '';
+    nodeKeyBox.value = '';
 });
 
 signButton?.addEventListener('click', async () => {
@@ -58,7 +88,7 @@ signButton?.addEventListener('click', async () => {
     const challenge = stringToArrayBuffer(message);
 
     const signature = await signer.sign(challenge);
-    signatureBox.replaceChildren(createInputBoxElement(signature));
+    signatureBox.replaceChildren(createInputBoxElement('', signature));
 });
 
 verifyButton?.addEventListener('click', async () => {
@@ -80,46 +110,35 @@ verifyButton?.addEventListener('click', async () => {
 async function populateYourAccount() {
     // Reset UI state first.
     signButton.disabled = true;
-    signOutButton.style.display = 'none';
-    yourAccountsBox.innerHTML = '';
+    yourRootKeysBox.innerHTML = '';
 
     const signer = await loadSigner();
     if (signer) {
         const spki = signer.getPublicKey();
-        yourAccountsBox.innerText = `${signer.getUserId()}: `;
-        const keyInput = createInputBoxElement(toBase64(spki));
-        yourAccountsBox.appendChild(keyInput);
+        yourRootKeysBox.appendChild(createInputBoxElement(`${signer.getUserId()}: `, toBase64(spki)));
         signButton.disabled = false;
-        signOutButton.style.display = 'block';
     } else {
-        yourAccountsBox.innerText = 'Signed out.';
+        yourRootKeysBox.innerText = 'Signed out.';
         signButton.disabled = true;
-        signOutButton.style.display = 'none';
     }
 }
 
-function createInputBoxElement(value: string): HTMLInputElement {
+function createInputBoxElement(label: string, value: string): HTMLDivElement {
+    const container = document.createElement('div');
     const input = document.createElement('input');
     input.value = value;
     input.readOnly = true;
-    return input;
+    container.appendChild(document.createTextNode(label));
+    container.appendChild(input);
+    return container;
 }
 
 async function createKeyPair(username: string): Promise<KeyPair> {
-    if (selectedCryptoProvider() === 'webauthn') {
-        return await createWebAuthnKeyPair(localUserStorage, username);
-    } else {
-        return await createWebCryptoKeyPair(username);
-    }
+    return await createWebAuthnKeyPair(localUserStorage, username);
 }
 
 async function loadSigner(): Promise<KeyPair|null> {
-    let keyPairs: KeyPair[];
-    if (selectedCryptoProvider() === 'webauthn') {
-        keyPairs = await loadWebAuthnKeyPairs(localUserStorage);
-    } else {
-        keyPairs = await loadWebCryptoKeyPairs();
-    }
+    const keyPairs = await loadWebCryptoKeyPairs();
     if (keyPairs.length === 0) {
         return null;
     } else {
@@ -128,17 +147,58 @@ async function loadSigner(): Promise<KeyPair|null> {
 }
 
 async function loadVerifier(publicKey: ArrayBuffer): Promise<Verifier> {
-    if (selectedCryptoProvider() === 'webauthn') {
-        return await createWebAuthnVerifier(publicKey);
-    } else {
-        return await createWebCryptoVerifier(publicKey);
+    return await createWebAuthnVerifier(publicKey);
+}
+
+async function populateNodeKeys() {
+    // Reset UI state first
+    yourNodeKeysBox.innerHTML = '';
+
+    const keyPairs = await loadWebAuthnKeyPairs(localUserStorage);
+    const masterKey = keyPairs[0];
+
+    const nodeKeys = await loadNodeKeys(masterKey);
+    for (let key of nodeKeys) {
+        yourNodeKeysBox.appendChild(createInputBoxElement(`${key.nickname}: `, key.publicKey));
     }
 }
 
-function selectedCryptoProvider(): 'webauthn'|'webcrypto' {
-    if (webAuthnRadio.checked) {
-        return 'webauthn';
-    } else {
-        return 'webcrypto';
+async function loadNodeKeys(verifier: Verifier): Promise<NodeKey[]> {
+    let nodeKeys: NodeKey[] = [];
+    
+    const nodeKeyString = await nodeKeyStorage.load('NODE_KEYS');
+    if (nodeKeyString) {
+        const nodeKeyPayload: NodeKeyPayload = JSON.parse(nodeKeyString);
+        const verified = await verifier.verify(stringToArrayBuffer(nodeKeyPayload.payload), nodeKeyPayload.signature);
+        if (!verified) {
+            throw new Error('Could not verify signature on saved node key payload!');
+        }
+        nodeKeys = JSON.parse(nodeKeyPayload.payload);
     }
+
+    return nodeKeys;
+}
+
+async function saveNodeKeys(signer: Signer, nodeKeys: NodeKey[]): Promise<void> {
+    const signedPayload = await generateNodeKeyPayload(signer, nodeKeys);
+    await nodeKeyStorage.store('NODE_KEYS', JSON.stringify(signedPayload));
+}
+
+async function generateNodeKeyPayload(signer: Signer, keys: NodeKey[]): Promise<NodeKeyPayload> {
+    const payload = JSON.stringify(keys);
+    const signature = await signer.sign(stringToArrayBuffer(payload));
+    return {
+        payload,
+        signature
+    };
+}
+
+interface NodeKeyPayload {
+    payload: string;
+    signature: string;
+}
+
+interface NodeKey {
+    nickname: string;
+    publicKey: string;
 }
