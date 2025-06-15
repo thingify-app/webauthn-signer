@@ -7,6 +7,9 @@
             button,input,textarea {
                 margin: 2px 0px 2px 0px;
             }
+            select {
+                display: block;
+            }
         </style>
     </head>
     <body>
@@ -24,8 +27,8 @@
         </div>
         <hr/>
         <div>
-            Your node keys:
-            <div id="yourNodeKeys">Loading...</div>
+            Trusted node keys:
+            <div id="trustedNodeKeys">Loading...</div>
         </div>
         <div>
             <input type="text" name="nodeKeyNickname" id="nodeKeyNickname" placeholder="Nickname"/>
@@ -34,6 +37,15 @@
         </div>
         <hr/>
         <div>
+            Local node keys:
+            <div id="localNodeKeys">Loading...</div>
+            <button id="generateLocalNodeKey">Generate local node key</button>
+        </div>
+        <hr/>
+        <div>
+            <select name="signingKey" id="signingKey">
+                <option value="">Choose a signing key...</option>
+            </select>
             <textarea placeholder="Message to sign" id="messageToSign"></textarea><br/>
             <button id="signDocument">Sign</button>
             <div id="signature"></div>
