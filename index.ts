@@ -6,6 +6,7 @@ import { createKeyPair as createWebCryptoKeyPair, createVerifier as createWebCry
 
 const usernameBox = document.getElementById('username') as HTMLInputElement;
 const signUpButton = document.getElementById('signUp') as HTMLButtonElement;
+const rootKeyNicknameBox = document.getElementById('rootKeyNickname') as HTMLInputElement;
 const yourRootKeysBox = document.getElementById('yourRootKeys') as HTMLDivElement;
 const addRootKeyButton = document.getElementById('addRootKey') as HTMLButtonElement;
 const trustedNodeKeysBox = document.getElementById('trustedNodeKeys') as HTMLDivElement;
@@ -27,6 +28,8 @@ const verifyStatus = document.getElementById('verifyStatus') as HTMLDivElement;
 const localUserStorage = new LocalStorage('LOCAL_USER');
 const nodeKeyStorage = new LocalStorage('NODE_KEYS');
 
+let selectedRootKey: KeyPair|null = null;
+
 populateYourAccount();
 populateTrustedNodeKeys();
 populateLocalNodeKeys();
@@ -43,7 +46,19 @@ signUpButton.addEventListener('click', async () => {
     populateYourAccount();
 });
 
-addRootKeyButton.addEventListener('click', async () => {});
+addRootKeyButton.addEventListener('click', async () => {
+    const nickname = rootKeyNicknameBox.value;
+
+    if (nickname.length === 0) {
+        return alert('Nickname required!');
+    }
+
+    const creds = await createKeyPair(nickname);
+    await creds.save();
+    populateYourAccount();
+
+    rootKeyNicknameBox.value = '';
+});
 
 addNodeKeyButton.addEventListener('click', async () => {
     const nickname = nodeKeyNicknameBox.value;
@@ -64,7 +79,11 @@ addNodeKeyButton.addEventListener('click', async () => {
         return alert('Could not parse public key!');
     }
 
-    await addNodeKey({
+    if (!selectedRootKey) {
+        return alert('No root key selected for signing!');
+    }
+
+    await addNodeKey(selectedRootKey, {
         nickname,
         publicKey
     });
@@ -76,12 +95,16 @@ addNodeKeyButton.addEventListener('click', async () => {
 });
 
 generateLocalNodeKeyButton.addEventListener('click', async () => {
+    if (!selectedRootKey) {
+        return alert('No root key selected for signing!');
+    }
+
     const userId = crypto.randomUUID();
     const keyPair = await createWebCryptoKeyPair(userId);
     keyPair.save();
     
     // Add local key to list of trusted node keys:
-    await addNodeKey({
+    await addNodeKey(selectedRootKey, {
         nickname: userId,
         publicKey: toBase64(keyPair.getPublicKey()),
     });
@@ -131,18 +154,53 @@ verifyButton.addEventListener('click', async () => {
 
 async function populateYourAccount() {
     // Reset UI state first.
-    signButton.disabled = true;
     yourRootKeysBox.innerHTML = '';
 
-    const signer = await loadRootKeyPair();
-    if (signer) {
-        const spki = signer.getPublicKey();
-        yourRootKeysBox.appendChild(createInputBoxElement(`${signer.getUserId()}: `, toBase64(spki)));
-        signButton.disabled = false;
+    const keyPairs = await loadWebAuthnKeyPairs(localUserStorage);
+    if (keyPairs.length > 0) {
+        for (const [index, key] of keyPairs.entries()) {
+            const spki = key.getPublicKey();
+
+            const selectHandler = async () => {
+                selectedRootKey = key;
+                console.log(`Selected root key: ${key.getUserId()}`);
+            };
+
+            yourRootKeysBox.appendChild(
+                createRootKeyElement(
+                    key.getUserId(),
+                    spki,
+                    index === 0,
+                    selectHandler
+                )
+            );
+        }
     } else {
         yourRootKeysBox.innerText = 'Signed out.';
-        signButton.disabled = true;
     }
+}
+
+function createRootKeyElement(label: string, spki: ArrayBuffer, first: boolean, selectHandler: () => void): HTMLDivElement {
+    const container = createInputBoxElement(`${label}: `, toBase64(spki));
+    
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'selectedRootKey';
+    radio.value = label;
+
+    if (first) {
+        radio.checked = true;
+        selectHandler();
+    }
+
+    radio.addEventListener('click', () => {
+        if (radio.checked) {
+            selectHandler();
+        }
+    });
+
+    container.prepend(radio);
+    return container;
 }
 
 function createInputBoxElement(label: string, value: string): HTMLDivElement {
@@ -159,12 +217,12 @@ async function createKeyPair(username: string): Promise<KeyPair> {
     return await createWebAuthnKeyPair(localUserStorage, username);
 }
 
-async function loadRootKeyPair(): Promise<KeyPair> {
+async function loadRootKeyPairs(): Promise<KeyPair[]> {
     const keyPairs = await loadWebAuthnKeyPairs(localUserStorage);
     if (keyPairs.length === 0) {
         throw new Error('No WebAuthn keypairs found!');
     } else {
-        return keyPairs[0];
+        return keyPairs;
     }
 }
 
@@ -172,9 +230,7 @@ async function populateTrustedNodeKeys() {
     // Reset UI state first
     trustedNodeKeysBox.innerHTML = '';
 
-    const rootKeyPair = await loadRootKeyPair();
-    const nodeKeys = await loadNodeKeys(rootKeyPair);
-
+    const nodeKeys = await loadNodeKeys();
     for (let key of nodeKeys) {
         trustedNodeKeysBox.appendChild(createInputBoxElement(`${key.nickname}: `, key.publicKey));
     }
@@ -201,48 +257,56 @@ function createOptionElement(label: string, value: string): HTMLOptionElement {
     return element;
 }
 
-async function addNodeKey(nodeKey: NodeKey): Promise<void> {
-    const rootKey = await loadRootKeyPair();
-
-    const nodeKeys = await loadNodeKeys(rootKey);
+async function addNodeKey(signer: KeyPair, nodeKey: NodeKey): Promise<void> {
+    const nodeKeys = await loadNodeKeys();
     nodeKeys.push(nodeKey);
 
-    await saveNodeKeys(rootKey, nodeKeys);
+    await saveNodeKeys(signer, nodeKeys);
 }
 
-async function loadNodeKeys(verifier: Verifier): Promise<NodeKey[]> {
-    let nodeKeys: NodeKey[] = [];
-    
+async function loadNodeKeys(): Promise<NodeKey[]> {
+    const rootKeyPairs = await loadRootKeyPairs();
     const nodeKeyString = await nodeKeyStorage.load('NODE_KEYS');
     if (nodeKeyString) {
         const nodeKeyPayload: NodeKeyPayload = JSON.parse(nodeKeyString);
-        const verified = await verifier.verify(stringToArrayBuffer(nodeKeyPayload.payload), nodeKeyPayload.signature);
+        
+        const signer = nodeKeyPayload.signedById;
+        const signingKey = rootKeyPairs.find(keyPair => keyPair.getUserId() === signer);
+        if (!signingKey) {
+            throw new Error('Payload was not signed by known root key!');
+        }
+        
+        const verified = await signingKey.verify(stringToArrayBuffer(nodeKeyPayload.payload), nodeKeyPayload.signature);
         if (!verified) {
             throw new Error('Could not verify signature on saved node key payload!');
         }
-        nodeKeys = JSON.parse(nodeKeyPayload.payload);
-    }
 
-    return nodeKeys;
+        const nodeKeys = JSON.parse(nodeKeyPayload.payload);
+        return nodeKeys;
+    } else {
+        return [];
+    }
 }
 
-async function saveNodeKeys(signer: Signer, nodeKeys: NodeKey[]): Promise<void> {
+async function saveNodeKeys(signer: KeyPair, nodeKeys: NodeKey[]): Promise<void> {
     const signedPayload = await generateNodeKeyPayload(signer, nodeKeys);
     await nodeKeyStorage.store('NODE_KEYS', JSON.stringify(signedPayload));
 }
 
-async function generateNodeKeyPayload(signer: Signer, keys: NodeKey[]): Promise<NodeKeyPayload> {
+async function generateNodeKeyPayload(signer: KeyPair, keys: NodeKey[]): Promise<NodeKeyPayload> {
     const payload = JSON.stringify(keys);
     const signature = await signer.sign(stringToArrayBuffer(payload));
     return {
         payload,
-        signature
+        signature,
+        signedById: signer.getUserId(),
     };
 }
 
 interface NodeKeyPayload {
     payload: string;
     signature: string;
+    signedById: string;
 }
 
 interface NodeKey {

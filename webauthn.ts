@@ -2,8 +2,6 @@ import { KeyPair, Signer, Verifier } from './keypair';
 import { Storage } from './storage';
 import { arrayBufferToString, fromBase64, stringToArrayBuffer, toBase64 } from './utils';
 
-const LOCAL_WEBAUTHN_KEY = 'LOCAL_WEBAUTHN_KEY';
-
 export async function createKeyPair(storage: Storage, userId: string): Promise<KeyPair> {
     const challenge = new Uint8Array(64);
     crypto.getRandomValues(challenge);
@@ -90,7 +88,7 @@ export class WebAuthnStorer {
     constructor(private storage: Storage, private userId: string, private rawId: ArrayBuffer, private spki: ArrayBuffer) {}
 
     async save(): Promise<void> {
-        await this.storage.store(LOCAL_WEBAUTHN_KEY, JSON.stringify({
+        await this.storage.store(this.userId, JSON.stringify({
             userId: this.userId,
             rawId: toBase64(this.rawId),
             spki: toBase64(this.spki),
@@ -119,6 +117,9 @@ export class WebAuthnSigner implements Signer {
 
         const response = assertion.response as AuthenticatorAssertionResponse;
         const signature = convertEcdsaAsn1Signature(new Uint8Array(response.signature));
+
+        // TODO: verify that the signature is correct, and as expected for the
+        // stored public key.
     
         return signedDataToCompact({
             authenticatorData: response.authenticatorData,
