@@ -1,6 +1,6 @@
 import { KeyPair } from './keypair';
-import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys } from './nodekeys';
-import { createRootKey, loadRootKeyPairs } from './rootkeys';
+import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys, reSignNodeKeys } from './nodekeys';
+import { addRootKey, createRootKey, deleteRootKey, loadRootKeyPairs } from './rootkeys';
 import { fromBase64, stringToArrayBuffer, toBase64 } from './utils';
 import { createVerifier as createWebCryptoVerifier } from './webcrypto';
 
@@ -38,8 +38,9 @@ signUpButton.addEventListener('click', async () => {
         return;
     }
 
-    const creds = await createRootKey(username);
-    await creds.save();
+    const newKey = await createRootKey(username);
+    await newKey.save();
+    await addRootKey(newKey);
     populateYourAccount();
 });
 
@@ -50,8 +51,9 @@ addRootKeyButton.addEventListener('click', async () => {
         return alert('Nickname required!');
     }
 
-    const creds = await createRootKey(nickname);
-    await creds.save();
+    const newKey = await createRootKey(nickname);
+    newKey.save();
+    await addRootKey(newKey);
     populateYourAccount();
 
     rootKeyNicknameBox.value = '';
@@ -157,12 +159,33 @@ async function populateYourAccount() {
                 console.log(`Selected root key: ${key.getUserId()}`);
             };
 
+            const deleteHandler = async () => {
+                if (keyPairs.length === 1) {
+                    return alert('Cannot delete final root key!');
+                }
+
+                // Find the first key pair which is not the one we are deleting:
+                const newSelectedRootKey = keyPairs.find(keyPair => keyPair.getUserId() !== key.getUserId());
+                if (!newSelectedRootKey) {
+                    return alert('Cannot find surviving root key!');
+                }
+
+                // Then re-sign the node keys with this surviving key:
+                await reSignNodeKeys(keyPairs, newSelectedRootKey);
+
+                // Now we can safely delete this root key:
+                console.log(`Deleting root key: ${key.getUserId()}`);
+                await deleteRootKey(key.getUserId());
+                populateYourAccount();
+            };
+
             yourRootKeysBox.appendChild(
                 createRootKeyElement(
                     key.getUserId(),
                     spki,
                     index === 0,
-                    selectHandler
+                    selectHandler,
+                    deleteHandler,
                 )
             );
         }
@@ -171,7 +194,7 @@ async function populateYourAccount() {
     }
 }
 
-function createRootKeyElement(label: string, spki: ArrayBuffer, first: boolean, selectHandler: () => void): HTMLDivElement {
+function createRootKeyElement(label: string, spki: ArrayBuffer, first: boolean, selectHandler: () => void, deleteHandler: () => void): HTMLDivElement {
     const container = createInputBoxElement(`${label}: `, toBase64(spki));
     
     const radio = document.createElement('input');
@@ -191,6 +214,13 @@ function createRootKeyElement(label: string, spki: ArrayBuffer, first: boolean, 
     });
 
     container.prepend(radio);
+
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = 'Delete';
+    deleteButton.addEventListener('click', deleteHandler);
+
+    container.append(deleteButton);
+
     return container;
 }
 

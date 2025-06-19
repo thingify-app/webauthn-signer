@@ -60,6 +60,11 @@ export async function addNodeKey(rootKeyPairs: KeyPair[], signer: KeyPair, nodeK
     await saveNodeKeys(signer, nodeKeys);
 }
 
+export async function reSignNodeKeys(rootKeyPairs: KeyPair[], newSigner: KeyPair): Promise<void> {
+    const nodeKeys = await loadNodeKeys(rootKeyPairs);
+    await saveNodeKeys(newSigner, nodeKeys);
+}
+
 async function generateNodeKeyPayload(signer: KeyPair, keys: NodeKey[]): Promise<NodeKeyPayload> {
     const payload = JSON.stringify(keys);
     const signature = await signer.sign(stringToArrayBuffer(payload));
