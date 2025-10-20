@@ -1,10 +1,31 @@
 import { KeyPair } from './keypair';
 import { LocalStorage } from './storage';
-import { stringToArrayBuffer, toBase64 } from './utils';
-import { createKeyPair, loadKeyPairs } from './webauthn';
+import { fromBase64, stringToArrayBuffer, toBase64 } from './utils';
+import { createKeyPair, importKeyPairs, loadKeyPairs } from './webauthn';
 
 const webAuthnStorage = new LocalStorage('WEB_AUTHN_KEYS');
 const rootKeyStorage = new LocalStorage('ROOT_KEYS');
+
+/**
+ * Imports a set of root keys, using the local login key to verify the authenticity of the payload.
+ */
+export async function importRootKeyPairs(loginKey: KeyPair, payload: RootKeyPayload): Promise<void> {
+    const loginKeyId = loginKey.getUserId();
+    const keys: RootKey[] = JSON.parse(payload.payload);
+
+    const loginKeyIndex = keys.findIndex(key => key.keyId === loginKeyId);
+    if (loginKeyIndex === -1) {
+        throw new Error('Key used to login is not present in root keys list!');
+    }
+
+    const verified = await loginKey.verify(stringToArrayBuffer(payload.payload), payload.signatures[loginKeyIndex]);
+    if (!verified) {
+        throw new Error(`Could not verify signature for login key ID ${loginKeyId}!`);
+    }
+
+    await importKeyPairs(webAuthnStorage, keys.map(key => ({rawId: fromBase64(key.keyId), userId: key.keyId, spkiPublicKey: fromBase64(key.spkiPublicKey)})));
+    await rootKeyStorage.store('ROOT_KEYS', JSON.stringify(payload));
+}
 
 export async function loadRootKeyPairs(): Promise<KeyPair[]> {
     const rootKeyString = await rootKeyStorage.load('ROOT_KEYS');

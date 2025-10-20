@@ -53,6 +53,14 @@ export async function createKeyPair(storage: Storage, userId: string): Promise<K
     };
 }
 
+export async function importKeyPairs(storage: Storage, keyPairs: {userId: string, rawId: ArrayBuffer, spkiPublicKey: ArrayBuffer}[]): Promise<void> {
+    storage.clear();
+    for (const keyPair of keyPairs) {
+        const storer = new WebAuthnStorer(storage, keyPair.userId, keyPair.rawId, keyPair.spkiPublicKey);
+        await storer.save();
+    }
+}
+
 export async function loadKeyPairs(storage: Storage): Promise<KeyPair[]> {
     const keys = await storage.keys();
     return Promise.all(keys.map(async userId => await loadKeyPair(storage, userId) as KeyPair));
