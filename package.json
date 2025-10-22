@@ -1,13 +1,18 @@
 {
     "name": "webauthn-signer",
+    "version": "0.0.0",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist/"
+    ],
     "scripts": {
-        "build": "rm -r dist/ && parcel build index.html --public-url ./",
-        "serve": "parcel index.html"
+        "clean": "rm -r dist/",
+        "build": "rm -r dist/ && tsc",
+        "buildWatch": "tsc -w"
     },
-    "private": true,
     "devDependencies": {
-        "parcel-bundler": "^1.12.4",
-        "typescript": "^4.0.5"
+        "typescript": "5.7"
     },
     "browserslist": [
         "last 1 Chrome version"

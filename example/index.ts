@@ -1,8 +1,8 @@
-import { KeyPair } from './keypair';
-import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys, reSignNodeKeys } from './nodekeys';
-import { addRootKey, createRootKey, deleteRootKey, loadRootKeyPairs } from './rootkeys';
-import { fromBase64, stringToArrayBuffer, toBase64 } from './utils';
-import { createVerifier as createWebCryptoVerifier } from './webcrypto';
+import { KeyPair } from 'webauthn-signer';
+import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys, reSignNodeKeys } from 'webauthn-signer';
+import { addRootKey, createRootKey, deleteRootKey, loadRootKeyPairs } from 'webauthn-signer';
+import { fromBase64, stringToArrayBuffer, toBase64 } from 'webauthn-signer';
+import { createVerifier as createWebCryptoVerifier } from 'webauthn-signer';
 
 const usernameBox = document.getElementById('username') as HTMLInputElement;
 const signUpButton = document.getElementById('signUp') as HTMLButtonElement;
