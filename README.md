@@ -2,7 +2,54 @@
 
 A library to allow WebAuthn to be used for signing arbitrary payloads.
 
-## Design principles
+## Single-root approach
+
+- User has a single root key, the public key fingerprint of which permanently
+  identifies their account.
+- If this key is lost/compromised, the account must be closed down and marked
+  as invalid by the service.
+- The root key signs a set of admin keys, which are a set of WebAuthn keys.
+- This payload of signed keys only needs to be re-signed every 12 months.
+- These admin keys can be used for day-to-day account management. They can,
+  in-turn, sign temporary WebCrypto keys that can be used for actual operations
+  and expire in 1-7 days (configurable).
+- When a new admin key is added, the root key must sign it.
+  - Problem: the device on which the admin key is being created might not
+    necessarily have access to the root key.
+  - Another problem: say I'm setting up my admin keys for the first time, and
+    they are device-specific. I may not be able to use my root key on all these
+    devices. I also can't sign into each device with an existing admin key,
+    because they are all device-specific. 
+  - Solution: I copy my known root key fingerprint from an existing device, and
+    paste this into the new device. I propose a new admin key on the new device,
+    which signs the root key fingerprint + a nonce and timestamp and sends this
+    to the service.
+  - The service adds this key to a "pending" list to be signed by the root key.
+  - The user can then log onto a device that has root key access and sign the
+    pending key.
+  - How do they know it hasn't been tampered with, i.e. how do they know the
+    service hasn't presented its own key to be signed by the root key? 
+  - The new admin key only signs the root key after receiving the signed payload
+    of its public key signed by the root key. It can then locally verify that
+    the root key (whose fingerprint it already knows) signed its public key.
+    This avoids another copy/paste round trip.
+  - The process for adding a new admin key will require more than just
+    possessing the public root key fingerprint, otherwise anyone could spam the
+    owner of a root key with admin key requests.
+  - A better way would be for the user to initiate a request on the machine with
+    the root key, which will produce a shortcode that can then be entered in on
+    the other device to associate this request with a particular admin key.
+- Another problem:
+  - I may sign into a new "naive" device, which has access to an admin key but
+    no knowledge of the root key.
+  - I sign into this device with that admin key, and the service sends me the
+    root key and the rest of the admin keys.
+  - How do I know this is legit?
+  - Solution: when adding an admin key, it is also used to sign the root key.
+    This way, each time I sign in on a naive device, it can locally verify that
+    the root key is legit.
+
+## Multi-root approach
 
 ### Root keys
 - Root keys are WebAuthn keys which can be used to sign payloads.

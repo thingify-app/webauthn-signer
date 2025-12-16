@@ -45,9 +45,63 @@ export async function createKeyPair(storage: Storage, userId: string): Promise<K
     const storer = new WebAuthnStorer(storage, userId, creds.rawId, publicKey);
 
     return {
+        getKeyId: () => creds.rawId,
         sign: (message) => signer.sign(message),
         verify: (message, signature) => verifier.verify(message, signature),
         save: () => storer.save(),
+        getUserId: () => userId,
+        getPublicKey: () => publicKey
+    };
+}
+
+export async function createKeyPairNoStorage(userId: string): Promise<KeyPair> {
+    const challenge = new Uint8Array(64);
+    crypto.getRandomValues(challenge);
+
+    const options: PublicKeyCredentialCreationOptions = {
+        challenge,
+        pubKeyCredParams: [{
+            type: 'public-key',
+            alg: -7
+        }],
+        rp: {
+            name: 'WebAuthn Signer Demo'
+        },
+        user: {
+            id: stringToArrayBuffer(userId),
+            name: userId,
+            displayName: userId
+        },
+        // For some reason, this is required to use e.g. Google Password Manager passkey.
+        authenticatorSelection: {
+            residentKey: 'required'
+        }
+    };
+
+    const creds = await navigator.credentials.create({
+        publicKey: options
+    }) as PublicKeyCredential;
+
+    const response = creds.response as AuthenticatorAttestationResponse;
+    console.log(response);
+    console.log(JSON.parse(arrayBufferToString(response.clientDataJSON)));
+    // TODO: verify challenge and signature in here.
+
+    const publicKey = response.getPublicKey();
+    if (publicKey === null) {
+        throw new Error('No public key returned!');
+    }
+
+    const signer = new WebAuthnSigner(creds.rawId);
+    const verifier = new WebAuthnVerifier(await importPublicKey(publicKey));
+
+    return {
+        getKeyId: () => creds.rawId,
+        sign: (message) => signer.sign(message),
+        verify: (message, signature) => verifier.verify(message, signature),
+        save: () => {
+            throw new Error('Saving not supported for no-storage KeyPair');
+        },
         getUserId: () => userId,
         getPublicKey: () => publicKey
     };
@@ -81,6 +135,7 @@ export async function loadKeyPair(storage: Storage, userId: string): Promise<Key
         const storer = new WebAuthnStorer(storage, userId, rawId, spki);
 
         return {
+            getKeyId: () => rawId,
             sign: (message) => signer.sign(message),
             verify: (message, signature) => verifier.verify(message, signature),
             save: () => storer.save(),
@@ -90,6 +145,26 @@ export async function loadKeyPair(storage: Storage, userId: string): Promise<Key
     } else {
         return null;
     }
+}
+
+export async function loadKeyPairNoStorage(keyId: string, publicKeySpki: string): Promise<KeyPair> {
+    const rawKeyId = fromBase64(keyId);
+    const rawSpki = fromBase64(publicKeySpki);
+    
+    const publicKey = await importPublicKey(rawSpki);
+    const verifier = new WebAuthnVerifier(publicKey);
+    const signer = new WebAuthnSigner(rawKeyId);
+
+    return {
+        getKeyId: () => rawKeyId,
+        sign: async (message) => signer.sign(message),
+        verify: (message, signature) => verifier.verify(message, signature),
+        save: async () => {
+            throw new Error('Saving not supported for no-storage KeyPair');
+        },
+        getUserId: () => keyId,
+        getPublicKey: () => rawSpki
+    };
 }
 
 export class WebAuthnStorer {

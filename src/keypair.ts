@@ -1,4 +1,5 @@
 export interface KeyPair extends Signer, Verifier {
+    getKeyId(): ArrayBuffer;
     getUserId(): string;
     getPublicKey(): ArrayBuffer;
     save(): Promise<void>;

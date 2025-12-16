@@ -1,10 +1,21 @@
-import { KeyPair } from 'webauthn-signer';
+import { createState, importState, KeyPair, RootKeyState } from 'webauthn-signer';
 import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys, reSignNodeKeys } from 'webauthn-signer';
 import { addRootKey, createRootKey, deleteRootKey, loadRootKeyPairs } from 'webauthn-signer';
 import { fromBase64, stringToArrayBuffer, toBase64 } from 'webauthn-signer';
 import { createVerifier as createWebCryptoVerifier } from 'webauthn-signer';
 
 const usernameBox = document.getElementById('username') as HTMLInputElement;
+const createStateButton = document.getElementById('createStateButton') as HTMLButtonElement;
+const importStateBox = document.getElementById('importState') as HTMLTextAreaElement;
+const importStateButton = document.getElementById('importStateButton') as HTMLButtonElement;
+const stateMessageToSign = document.getElementById('stateMessageToSign') as HTMLTextAreaElement;
+const stateSignDocument = document.getElementById('stateSignDocument') as HTMLButtonElement;
+const stateSignature = document.getElementById('stateSignature') as HTMLDivElement;
+const stateMessageToVerify = document.getElementById('stateMessageToVerify') as HTMLTextAreaElement;
+const stateSignatureToVerify = document.getElementById('stateSignatureToVerify') as HTMLTextAreaElement;
+const stateVerifyDocument = document.getElementById('stateVerifyDocument') as HTMLButtonElement;
+const stateVerifyStatus = document.getElementById('stateVerifyStatus') as HTMLDivElement;
+
 const signUpButton = document.getElementById('signUp') as HTMLButtonElement;
 const rootKeyNicknameBox = document.getElementById('rootKeyNickname') as HTMLInputElement;
 const yourRootKeysBox = document.getElementById('yourRootKeys') as HTMLDivElement;
@@ -26,10 +37,60 @@ const verifyButton = document.getElementById('verifyDocument') as HTMLButtonElem
 const verifyStatus = document.getElementById('verifyStatus') as HTMLDivElement;
 
 let selectedRootKey: KeyPair|null = null;
+let localState: RootKeyState|null = null;
 
 populateYourAccount();
 populateTrustedNodeKeys();
 populateLocalNodeKeys();
+
+createStateButton.addEventListener('click', async () => {
+    const state = await createState();
+    localState = state;
+    console.log('Created state:', state);
+    const exported = state.exportState();
+    console.log('Exported state:', exported);
+    importStateBox.value = JSON.stringify(exported);
+});
+
+importStateButton.addEventListener('click', async () => {
+    const stateString = importStateBox.value;
+    if (stateString.length === 0) {
+        return alert('Please paste a state to import!');
+    }
+
+    try {
+        const state = await importState(stateString);
+        localState = state;
+        console.log('Imported state:', state);
+    } catch (e) {
+        alert(`Error importing state: ${e}`);
+    }
+});
+
+stateSignDocument.addEventListener('click', async () => {
+    if (!localState) {
+        return alert('No state loaded!');
+    }
+
+    const message = stateMessageToSign.value;
+    const challenge = stringToArrayBuffer(message);
+
+    const signature = await localState.signPayload(challenge);
+    stateSignature.replaceChildren(createInputBoxElement('', signature));
+});
+
+stateVerifyDocument.addEventListener('click', async () => {
+    if (!localState) {
+        return alert('No state loaded!');
+    }
+
+    try {
+        const verificationStatus = await localState.verifyPayload(stringToArrayBuffer(stateMessageToVerify.value), stateSignatureToVerify.value);
+        stateVerifyStatus.innerText = `Verified: ${verificationStatus}`;
+    } catch (e) {
+        return stateVerifyStatus.innerText = `Error: ${e}`;
+    }
+});
 
 signUpButton.addEventListener('click', async () => {
     const username = usernameBox.value;

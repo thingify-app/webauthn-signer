@@ -1,6 +1,6 @@
 import { createStore, get, set, keys, UseStore } from 'idb-keyval';
 import { KeyPair, Signer, Verifier } from './keypair';
-import { fromBase64, toBase64 } from './utils';
+import { fromBase64, stringToArrayBuffer, toBase64 } from './utils';
 
 export async function createKeyPair(userId: string): Promise<KeyPair> {
     const cryptoKeyPair = await crypto.subtle.generateKey({
@@ -39,6 +39,10 @@ class WebCryptoKeyPair implements KeyPair {
     constructor(private userId: string, private cryptoKeyPair: CryptoKeyPair, private spkiPublicKey: ArrayBuffer) {
         this.signer = new WebCryptoSigner(cryptoKeyPair.privateKey);
         this.verifier = new WebCryptoVerifier(cryptoKeyPair.publicKey);
+    }
+
+    getKeyId(): ArrayBuffer {
+        return stringToArrayBuffer(this.userId);
     }
 
     getUserId(): string {
