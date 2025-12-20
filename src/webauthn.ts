@@ -147,7 +147,7 @@ export async function loadKeyPair(storage: Storage, userId: string): Promise<Key
     }
 }
 
-export async function loadKeyPairNoStorage(keyId: string, publicKeySpki: string): Promise<KeyPair> {
+export async function loadKeyPairNoStorage(keyId: string, publicKeySpki: string, challenge: ArrayBuffer): Promise<[KeyPair, string]> {
     const rawKeyId = fromBase64(keyId);
     const rawSpki = fromBase64(publicKeySpki);
     
@@ -155,7 +155,15 @@ export async function loadKeyPairNoStorage(keyId: string, publicKeySpki: string)
     const verifier = new WebAuthnVerifier(publicKey);
     const signer = new WebAuthnSigner(rawKeyId);
 
-    return {
+    // Try signing a payload with the actual key, then verify it with the given
+    // public key.
+    const signature = await signer.sign(challenge);
+    const verified = await verifier.verify(challenge, signature);
+    if (!verified) {
+        throw new Error('Could not verify signature with given public key!');
+    }
+
+    return [{
         getKeyId: () => rawKeyId,
         sign: async (message) => signer.sign(message),
         verify: (message, signature) => verifier.verify(message, signature),
@@ -164,7 +172,20 @@ export async function loadKeyPairNoStorage(keyId: string, publicKeySpki: string)
         },
         getUserId: () => keyId,
         getPublicKey: () => rawSpki
+    }, signature];
+}
+
+export async function loadLocalKeyId(challenge: ArrayBuffer): Promise<string> {
+    const getOptions: PublicKeyCredentialRequestOptions = {
+        challenge,
+        userVerification: 'required',
     };
+
+    const assertion = await navigator.credentials.get({
+        publicKey: getOptions,
+    }) as PublicKeyCredential;
+
+    return toBase64(assertion.rawId);
 }
 
 export class WebAuthnStorer {
@@ -199,7 +220,7 @@ export class WebAuthnSigner implements Signer {
         }) as PublicKeyCredential;
 
         const response = assertion.response as AuthenticatorAssertionResponse;
-        const signature = convertEcdsaAsn1Signature(new Uint8Array(response.signature));
+        const signature = convertEcdsaAsn1Signature(response.signature);
 
         // TODO: verify that the signature is correct, and as expected for the
         // stored public key.
@@ -230,7 +251,8 @@ export class WebAuthnVerifier implements Verifier {
 
         const messageMatches = arrayBuffersEqual(fromBase64(clientDataParsed.challenge), message);
         if (!messageMatches) {
-            throw new Error('Message does not match challenge.');
+            console.error('Message does not match challenge.');
+            return false;
         }
 
         const hashedClientData = await crypto.subtle.digest({name: 'SHA-256'}, signedData.clientData);
@@ -270,6 +292,13 @@ function mergeBuffer(buffer1: ArrayBuffer, buffer2: ArrayBuffer): ArrayBuffer {
     return tmp.buffer;
 }
 
+function mergeBufferUint8(buffer1: Uint8Array, buffer2: Uint8Array): Uint8Array {
+    const tmp = new Uint8Array(buffer1.byteLength + buffer2.byteLength);
+    tmp.set(buffer1, 0);
+    tmp.set(buffer2, buffer1.byteLength);
+    return tmp;
+}
+
 function readAsn1IntegerSequence(input: Uint8Array): Uint8Array<ArrayBuffer>[] {
     if (input[0] !== 0x30) throw new Error('Input is not an ASN.1 sequence');
     const seqLength = input[1];
@@ -291,8 +320,8 @@ function readAsn1IntegerSequence(input: Uint8Array): Uint8Array<ArrayBuffer>[] {
     return elements;
 }
 
-function convertEcdsaAsn1Signature(input: Uint8Array): ArrayBuffer {
-    const elements = readAsn1IntegerSequence(input);
+function convertEcdsaAsn1Signature(input: ArrayBuffer): ArrayBuffer {
+    const elements = readAsn1IntegerSequence(new Uint8Array(input));
     if (elements.length !== 2) throw new Error('Expected 2 ASN.1 sequence elements');
     let [r, s] = elements;
 
@@ -309,10 +338,10 @@ function convertEcdsaAsn1Signature(input: Uint8Array): ArrayBuffer {
     // R and S length is assumed multiple of 128bit.
     // If missing a byte then it will be padded by 0.
     if ((r.byteLength % 16) == 15) {
-      r = new Uint8Array(mergeBuffer(new Uint8Array([0]), r));
+      r = mergeBufferUint8(new Uint8Array([0]), r);
     }
     if ((s.byteLength % 16) == 15) {
-      s = new Uint8Array(mergeBuffer(new Uint8Array([0]), s));
+      s = mergeBufferUint8(new Uint8Array([0]), s);
     }
 
     // If R and S length is not still multiple of 128bit,
@@ -320,7 +349,7 @@ function convertEcdsaAsn1Signature(input: Uint8Array): ArrayBuffer {
     if (r.byteLength % 16 != 0) throw Error('unknown ECDSA sig r length error');
     if (s.byteLength % 16 != 0) throw Error('unknown ECDSA sig s length error');
 
-    return mergeBuffer(r, s);
+    return mergeBufferUint8(r, s).buffer;
 }
 
 function arrayBuffersEqual(a: ArrayBuffer, b: ArrayBuffer): boolean {

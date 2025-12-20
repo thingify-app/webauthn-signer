@@ -6,8 +6,9 @@ export * from './storage';
 export * from './utils';
 
 import { KeyPair } from './keypair';
-import { toBase64 } from './utils';
-import { createKeyPairNoStorage, loadKeyPairNoStorage } from './webauthn';
+import { arrayBufferToString, fromBase64, stringToArrayBuffer, toBase64 } from './utils';
+import { createKeyPairNoStorage, createVerifier as createVerifierWebAuthn, loadKeyPairNoStorage, loadLocalKeyId } from './webauthn';
+import { createKeyPair as createKeyPairWebCrypto, createVerifier as createVerifierWebCrypto } from './webcrypto';
 
 export async function createState(): Promise<RootKeyState> {
     // Create root key.
@@ -15,12 +16,25 @@ export async function createState(): Promise<RootKeyState> {
     return new RootKeyState(rootKeyPair);
 }
 
-export async function importState(state: string): Promise<RootKeyState> {
+export async function importState(state: string): Promise<[RootKeyState, InMemoryKeyPair]> {
     const parsedState: ExportedState = JSON.parse(state);
     const keyId = parsedState.rootKeyId;
 
-    const keyPair = await loadKeyPairNoStorage(keyId, parsedState.publicRootKey);
-    return new RootKeyState(keyPair);
+    const inMemoryKeyPair = await createKeyPairWebCrypto('in-memory-temp-key');
+    const inMemoryPublicKey = inMemoryKeyPair.getPublicKey();
+    console.log('In-memory public key:');
+    console.log(toBase64(inMemoryPublicKey));
+
+    // Pass the in-memory public key as a challenge, so that we can use this signed key.
+    const [keyPair, signature] = await loadKeyPairNoStorage(keyId, parsedState.publicRootKey, inMemoryPublicKey);
+    return [
+        new RootKeyState(keyPair),
+        new InMemoryKeyPair(inMemoryKeyPair, signature)
+    ];
+}
+
+export async function loadLocalKey(nonce: ArrayBuffer): Promise<string> {
+    return loadLocalKeyId(nonce);
 }
 
 export class RootKeyState {
@@ -34,8 +48,8 @@ export class RootKeyState {
         };
     }
 
-    listRootKeys(): KeyPair[] {
-        return [];
+    getRootPublicKey(): ArrayBuffer {
+        return this.rootKey.getPublicKey();
     }
 
     signPayload(message: ArrayBuffer): Promise<string> {
@@ -45,6 +59,59 @@ export class RootKeyState {
     verifyPayload(message: ArrayBuffer, signature: string): Promise<boolean> {
         return this.rootKey.verify(message, signature);
     }
+}
+
+export class InMemoryKeyPair implements KeyPair {
+    private signaturePrefix: string;
+    constructor(private inMemoryKeyPair: KeyPair, private inMemoryKeyPairSignature: string) {
+        this.signaturePrefix = `${toBase64(this.inMemoryKeyPair.getPublicKey())}.${toBase64(stringToArrayBuffer(this.inMemoryKeyPairSignature))}`;
+    }
+
+    getKeyId(): ArrayBuffer {
+        return this.inMemoryKeyPair.getKeyId();
+    }
+
+    getUserId(): string {
+        return this.inMemoryKeyPair.getUserId();
+    }
+
+    getPublicKey(): ArrayBuffer {
+        return this.inMemoryKeyPair.getPublicKey();
+    }
+
+    async save(): Promise<void> {
+        // No-op for in-memory key.
+    }
+
+    async sign(message: ArrayBuffer): Promise<string> {
+        const messageSignature = await this.inMemoryKeyPair.sign(message);
+        return `${this.signaturePrefix}.${messageSignature}`;
+    }
+
+    async verify(message: ArrayBuffer, signature: string): Promise<boolean> {
+        throw new Error('In-memory key cannot verify signatures!');
+    }
+}
+
+export async function verifySignature(message: ArrayBuffer, signature: string, rootPublicKey: ArrayBuffer): Promise<boolean> {
+    // Signature consists of 3 dot-separated components:
+    // - public key of the temporary key used to sign the message
+    // - signature of the temporary key's public key by the root key
+    // - signature of the message by the temporary key
+    const parts = signature.split('.', 3);
+    const tempPublicKey = fromBase64(parts[0]);
+    const tempKeySignature = arrayBufferToString(fromBase64(parts[1]));
+    const messageSignature = parts[2];
+
+    const rootKeyVerifier = await createVerifierWebAuthn(rootPublicKey);
+    const isTempKeySignatureValid = await rootKeyVerifier.verify(tempPublicKey, tempKeySignature);
+
+    if (!isTempKeySignatureValid) {
+        return false;
+    }
+
+    const tempKeyVerifier = await createVerifierWebCrypto(tempPublicKey);
+    return await tempKeyVerifier.verify(message, messageSignature);
 }
 
 export interface ExportedState {

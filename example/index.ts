@@ -1,4 +1,4 @@
-import { createState, importState, KeyPair, RootKeyState } from 'webauthn-signer';
+import { createState, importState, KeyPair, loadLocalKey, RootKeyState, verifySignature } from 'webauthn-signer';
 import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys, reSignNodeKeys } from 'webauthn-signer';
 import { addRootKey, createRootKey, deleteRootKey, loadRootKeyPairs } from 'webauthn-signer';
 import { fromBase64, stringToArrayBuffer, toBase64 } from 'webauthn-signer';
@@ -8,6 +8,7 @@ const usernameBox = document.getElementById('username') as HTMLInputElement;
 const createStateButton = document.getElementById('createStateButton') as HTMLButtonElement;
 const importStateBox = document.getElementById('importState') as HTMLTextAreaElement;
 const importStateButton = document.getElementById('importStateButton') as HTMLButtonElement;
+const loadLocalKeyIdButton = document.getElementById('loadLocalKeyId') as HTMLButtonElement;
 const stateMessageToSign = document.getElementById('stateMessageToSign') as HTMLTextAreaElement;
 const stateSignDocument = document.getElementById('stateSignDocument') as HTMLButtonElement;
 const stateSignature = document.getElementById('stateSignature') as HTMLDivElement;
@@ -38,6 +39,7 @@ const verifyStatus = document.getElementById('verifyStatus') as HTMLDivElement;
 
 let selectedRootKey: KeyPair|null = null;
 let localState: RootKeyState|null = null;
+let localInMemoryKeyPair: KeyPair|null = null;
 
 populateYourAccount();
 populateTrustedNodeKeys();
@@ -59,23 +61,31 @@ importStateButton.addEventListener('click', async () => {
     }
 
     try {
-        const state = await importState(stateString);
+        const [state, inMemoryKeyPair] = await importState(stateString);
         localState = state;
+        localInMemoryKeyPair = inMemoryKeyPair;
         console.log('Imported state:', state);
     } catch (e) {
-        alert(`Error importing state: ${e}`);
+        console.error('Error importing state:', e);
     }
 });
 
+loadLocalKeyIdButton.addEventListener('click', async () => {
+    const nonce = new Uint8Array(64);
+    crypto.getRandomValues(nonce);
+    const keyId = await loadLocalKey(nonce.buffer);
+    console.log(`Loaded local key ID: ${keyId}`);
+});
+
 stateSignDocument.addEventListener('click', async () => {
-    if (!localState) {
+    if (!localInMemoryKeyPair) {
         return alert('No state loaded!');
     }
 
     const message = stateMessageToSign.value;
     const challenge = stringToArrayBuffer(message);
 
-    const signature = await localState.signPayload(challenge);
+    const signature = await localInMemoryKeyPair.sign(challenge);
     stateSignature.replaceChildren(createInputBoxElement('', signature));
 });
 
@@ -85,7 +95,7 @@ stateVerifyDocument.addEventListener('click', async () => {
     }
 
     try {
-        const verificationStatus = await localState.verifyPayload(stringToArrayBuffer(stateMessageToVerify.value), stateSignatureToVerify.value);
+        const verificationStatus = await verifySignature(stringToArrayBuffer(stateMessageToVerify.value), stateSignatureToVerify.value, localState.getRootPublicKey());
         stateVerifyStatus.innerText = `Verified: ${verificationStatus}`;
     } catch (e) {
         return stateVerifyStatus.innerText = `Error: ${e}`;
