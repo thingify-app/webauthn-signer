@@ -13,6 +13,6 @@
         "last 1 Chrome version"
     ],
     "dependencies": {
-        "webauthn-signer": "file:../"
+        "webauthn-signer": "file:../client/"
     }
 }
