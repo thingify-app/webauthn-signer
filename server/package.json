@@ -1,0 +1,17 @@
+{
+    "name": "webauthn-signer-server",
+    "version": "0.0.0",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist/"
+    ],
+    "scripts": {
+        "clean": "rm -r dist/",
+        "build": "rm -r dist/ && tsc",
+        "buildWatch": "tsc -w"
+    },
+    "devDependencies": {
+        "typescript": "5.7"
+    }
+}

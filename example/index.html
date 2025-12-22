@@ -15,9 +15,14 @@
     <body>
         <h2>State UI</h2>
         <div>
+            <h3>Account:</h3>
+            <input type="text" name="username" id="username" placeholder="Username"/>
+            <button id="signUp">Sign up</button>
+            <button id="signIn">Sign in</button>
+        </div>
+        <div>
             <h3>State create/import:</h3>
             <textarea id="importState" placeholder="Paste state here"></textarea><br/>
-            <button id="createStateButton">Create new state</button>
             <button id="importStateButton">Import state</button>
             <button id="loadLocalKeyId">Get local key ID</button>
         </div>
@@ -37,10 +42,6 @@
             <div id="stateVerifyStatus"></div>
         </div>
         <h2>Storage UI</h2>
-        <div>
-            <input type="text" name="username" id="username" placeholder="Username"/>
-            <button id="signUp">Sign up</button>
-        </div>
         <hr/>
         <div>
             <h3>Your root keys:</h3>

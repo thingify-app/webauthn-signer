@@ -54,12 +54,9 @@ export async function createKeyPair(storage: Storage, userId: string): Promise<K
     };
 }
 
-export async function createKeyPairNoStorage(userId: string): Promise<KeyPair> {
-    const challenge = new Uint8Array(64);
-    crypto.getRandomValues(challenge);
-
+export async function createKeyPairNoStorage(userId: string, nonce: ArrayBuffer): Promise<WebAuthnKeyPair> {
     const options: PublicKeyCredentialCreationOptions = {
-        challenge,
+        challenge: nonce,
         pubKeyCredParams: [{
             type: 'public-key',
             alg: -7
@@ -103,8 +100,15 @@ export async function createKeyPairNoStorage(userId: string): Promise<KeyPair> {
             throw new Error('Saving not supported for no-storage KeyPair');
         },
         getUserId: () => userId,
-        getPublicKey: () => publicKey
+        getPublicKey: () => publicKey,
+        authenticatorData: response.getAuthenticatorData(),
+        clientDataJSON: response.clientDataJSON
     };
+}
+
+export interface WebAuthnKeyPair extends KeyPair {
+    authenticatorData: ArrayBuffer;
+    clientDataJSON: ArrayBuffer;
 }
 
 export async function importKeyPairs(storage: Storage, keyPairs: {userId: string, rawId: ArrayBuffer, spkiPublicKey: ArrayBuffer}[]): Promise<void> {
@@ -145,6 +149,38 @@ export async function loadKeyPair(storage: Storage, userId: string): Promise<Key
     } else {
         return null;
     }
+}
+
+export async function performLoginChallenge(keyId: ArrayBuffer, challenge: ArrayBuffer): Promise<LoginChallengeResult> {
+    const getOptions: PublicKeyCredentialRequestOptions = {
+        challenge,
+        allowCredentials: [
+            {
+                type: 'public-key',
+                id: keyId
+            }
+        ],
+        userVerification: 'required',
+    };
+    
+    const assertion = await navigator.credentials.get({
+        publicKey: getOptions,
+    }) as PublicKeyCredential;
+
+    const response = assertion.response as AuthenticatorAssertionResponse;
+    const signature = convertEcdsaAsn1Signature(response.signature);
+
+    return {
+        authenticatorData: response.authenticatorData,
+        clientDataJSON: response.clientDataJSON,
+        signature: signature
+    };
+}
+
+export interface LoginChallengeResult {
+    authenticatorData: ArrayBuffer;
+    clientDataJSON: ArrayBuffer;
+    signature: ArrayBuffer;
 }
 
 export async function loadKeyPairNoStorage(keyId: string, publicKeySpki: string, challenge: ArrayBuffer): Promise<[KeyPair, string]> {

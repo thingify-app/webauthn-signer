@@ -1,11 +1,16 @@
-import { createState, importState, KeyPair, loadLocalKey, RootKeyState, verifySignature } from 'webauthn-signer';
+import { createStateInitial, importState, KeyPair, loadLocalKey, login, RootKeyState, verifySignature } from 'webauthn-signer';
 import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys, reSignNodeKeys } from 'webauthn-signer';
 import { addRootKey, createRootKey, deleteRootKey, loadRootKeyPairs } from 'webauthn-signer';
 import { fromBase64, stringToArrayBuffer, toBase64 } from 'webauthn-signer';
 import { createVerifier as createWebCryptoVerifier } from 'webauthn-signer';
+import { InMemoryStorage, Server } from 'webauthn-signer-server';
+
+const server = new Server(new InMemoryStorage());
 
 const usernameBox = document.getElementById('username') as HTMLInputElement;
-const createStateButton = document.getElementById('createStateButton') as HTMLButtonElement;
+const signUpButton = document.getElementById('signUp') as HTMLButtonElement;
+const signInButton = document.getElementById('signIn') as HTMLButtonElement;
+
 const importStateBox = document.getElementById('importState') as HTMLTextAreaElement;
 const importStateButton = document.getElementById('importStateButton') as HTMLButtonElement;
 const loadLocalKeyIdButton = document.getElementById('loadLocalKeyId') as HTMLButtonElement;
@@ -17,7 +22,6 @@ const stateSignatureToVerify = document.getElementById('stateSignatureToVerify')
 const stateVerifyDocument = document.getElementById('stateVerifyDocument') as HTMLButtonElement;
 const stateVerifyStatus = document.getElementById('stateVerifyStatus') as HTMLDivElement;
 
-const signUpButton = document.getElementById('signUp') as HTMLButtonElement;
 const rootKeyNicknameBox = document.getElementById('rootKeyNickname') as HTMLInputElement;
 const yourRootKeysBox = document.getElementById('yourRootKeys') as HTMLDivElement;
 const addRootKeyButton = document.getElementById('addRootKey') as HTMLButtonElement;
@@ -45,13 +49,36 @@ populateYourAccount();
 populateTrustedNodeKeys();
 populateLocalNodeKeys();
 
-createStateButton.addEventListener('click', async () => {
-    const state = await createState();
-    localState = state;
-    console.log('Created state:', state);
-    const exported = state.exportState();
-    console.log('Exported state:', exported);
-    importStateBox.value = JSON.stringify(exported);
+signUpButton.addEventListener('click', async () => {
+    const username = usernameBox.value;
+    if (username.length === 0) {
+        alert('Please enter a username.');
+        return;
+    }
+
+    const nonce = await server.createAccountInitial();
+    console.log(`Received nonce for signup: ${toBase64(nonce)}`);
+
+    const initialState = await createStateInitial(username, nonce);
+
+    await server.createAccount(nonce, username, initialState.getKeyId(), initialState.getPublicKey());
+    console.log('Account created successfully!');
+});
+
+signInButton.addEventListener('click', async () => {
+    const username = usernameBox.value;
+    if (username.length === 0) {
+        alert('Please enter a username.');
+        return;
+    }
+
+    const { nonce, keyId } = await server.loginInitial(username);
+    console.log(`Received nonce for login: ${toBase64(nonce)}, keyId: ${toBase64(keyId)}`);
+
+    const result = await login(keyId, nonce);
+
+    await server.login(nonce, username, result.authenticatorData, result.clientDataJSON, result.signature);
+    console.log('Login successful!');
 });
 
 importStateButton.addEventListener('click', async () => {
@@ -100,19 +127,6 @@ stateVerifyDocument.addEventListener('click', async () => {
     } catch (e) {
         return stateVerifyStatus.innerText = `Error: ${e}`;
     }
-});
-
-signUpButton.addEventListener('click', async () => {
-    const username = usernameBox.value;
-    if (username.length === 0) {
-        alert('Please enter a username.');
-        return;
-    }
-
-    const newKey = await createRootKey(username);
-    await newKey.save();
-    await addRootKey(newKey);
-    populateYourAccount();
 });
 
 addRootKeyButton.addEventListener('click', async () => {

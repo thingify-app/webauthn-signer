@@ -7,13 +7,16 @@ export * from './utils';
 
 import { KeyPair } from './keypair';
 import { arrayBufferToString, fromBase64, stringToArrayBuffer, toBase64 } from './utils';
-import { createKeyPairNoStorage, createVerifier as createVerifierWebAuthn, loadKeyPairNoStorage, loadLocalKeyId } from './webauthn';
+import { createKeyPairNoStorage, createVerifier as createVerifierWebAuthn, loadKeyPairNoStorage, loadLocalKeyId, LoginChallengeResult, performLoginChallenge, WebAuthnKeyPair } from './webauthn';
 import { createKeyPair as createKeyPairWebCrypto, createVerifier as createVerifierWebCrypto } from './webcrypto';
 
-export async function createState(): Promise<RootKeyState> {
+export async function createStateInitial(username: string, nonce: ArrayBuffer): Promise<WebAuthnKeyPair> {
     // Create root key.
-    const rootKeyPair = await createKeyPairNoStorage('root-key');
-    return new RootKeyState(rootKeyPair);
+    return await createKeyPairNoStorage(username, nonce);
+}
+
+export async function login(keyId: ArrayBuffer, nonce: ArrayBuffer): Promise<LoginChallengeResult> {
+    return await performLoginChallenge(keyId, nonce);
 }
 
 export async function importState(state: string): Promise<[RootKeyState, InMemoryKeyPair]> {
