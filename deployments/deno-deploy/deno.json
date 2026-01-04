@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "hono": "npm:hono@^4.11.3",
+    "@hono/zod-validator": "npm:@hono/zod-validator@^0.7.6",
+    "zod": "npm:zod@^4.3.4",
+    "webauthn-signer-server": "../../server/src/index.ts"
+  },
+  "unstable": ["sloppy-imports", "kv"],
+  "publish": {
+    "include": ["../../server"]
+  }
+}

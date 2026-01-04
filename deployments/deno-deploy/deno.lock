@@ -1,0 +1,43 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@std/assert@*": "1.0.13",
+    "jsr:@std/internal@^1.0.6": "1.0.12",
+    "npm:@hono/zod-validator@~0.7.6": "0.7.6_hono@4.11.3_zod@4.3.4",
+    "npm:hono@^4.11.3": "4.11.3",
+    "npm:zod@^4.3.4": "4.3.4"
+  },
+  "jsr": {
+    "@std/assert@1.0.13": {
+      "integrity": "ae0d31e41919b12c656c742b22522c32fb26ed0cba32975cb0de2a273cb68b29",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.12": {
+      "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
+    }
+  },
+  "npm": {
+    "@hono/zod-validator@0.7.6_hono@4.11.3_zod@4.3.4": {
+      "integrity": "sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==",
+      "dependencies": [
+        "hono",
+        "zod"
+      ]
+    },
+    "hono@4.11.3": {
+      "integrity": "sha512-PmQi306+M/ct/m5s66Hrg+adPnkD5jiO6IjA7WhWw0gSBSo1EcRegwuI1deZ+wd5pzCGynCcn2DprnE4/yEV4w=="
+    },
+    "zod@4.3.4": {
+      "integrity": "sha512-Zw/uYiiyF6pUT1qmKbZziChgNPRu+ZRneAsMUDU6IwmXdWt5JwcUfy2bvLOCUtz5UniaN/Zx5aFttZYbYc7O/A=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:@hono/zod-validator@~0.7.6",
+      "npm:hono@^4.11.3",
+      "npm:zod@^4.3.4"
+    ]
+  }
+}

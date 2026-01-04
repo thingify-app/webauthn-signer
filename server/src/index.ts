@@ -16,11 +16,15 @@ export class Server {
         // Lookup the nonce and verify it's valid and unexpired.
         const nonceValid = await this.storage.verifyAndDeleteNonce(nonce);
         if (!nonceValid) {
-            throw new Error('Invalid or expired nonce');
+            throw new ClientError('Invalid or expired nonce');
         }
 
         // Validate the public key format by attempting to import it.
-        await importPublicKey(publicKey);
+        try {
+            await importPublicKey(publicKey);
+        } catch {
+            throw new ClientError('Invalid public key');
+        }
 
         // Store the account.
         const account: Account = { username, keyId, publicKey };
@@ -31,7 +35,7 @@ export class Server {
         // Lookup the account by username.
         const account = await this.storage.getAccount(username);
         if (!account) {
-            throw new Error('Account not found');
+            throw new ClientError('Account not found');
         }
 
         // Generate a nonce and store it.
@@ -45,21 +49,34 @@ export class Server {
         // Lookup the account by username.
         const account = await this.storage.getAccount(username);
         if (!account) {
-            throw new Error('Account not found');
+            throw new ClientError('Account not found');
         }
 
         // Lookup the nonce and verify it's valid and unexpired.
         const nonceValid = await this.storage.verifyAndDeleteNonce(nonce);
         if (!nonceValid) {
-            throw new Error('Invalid or expired nonce');
+            throw new ClientError('Invalid or expired nonce');
         }
 
         // Verify the signature of the nonce using the stored publicKey.
-        const signatureValid = await verifyWebauthnSignature(await importPublicKey(account.publicKey), nonce, authenticatorData, clientDataJSON, signature);
+        let publicKey: CryptoKey;
+        try {
+            publicKey = await importPublicKey(account.publicKey);
+        } catch {
+            throw new ClientError('Invalid public key');
+        }
+
+        const signatureValid = await verifyWebauthnSignature(publicKey, nonce, authenticatorData, clientDataJSON, signature);
 
         if (!signatureValid) {
-            throw new Error('Invalid signature');
+            throw new ClientError('Invalid signature');
         }
+    }
+}
+
+export class ClientError extends Error {
+    constructor(message: string) {
+        super(message);
     }
 }
 
