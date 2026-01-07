@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { zValidator } from '@hono/zod-validator'
 import * as z from 'zod';
 import { ClientError, Server } from 'webauthn-signer-server';
@@ -11,6 +12,8 @@ const storage = new DenoStorage(kv);
 const server = new Server(storage);
 
 const app = new Hono();
+
+app.use('*', cors());
 
 app.post('/createAccountInitial', async (c) => {
     const nonce = await server.createAccountInitial();
@@ -49,11 +52,11 @@ app.post('/loginInitial', zValidator('json', loginInitialRequest), async (c) => 
 });
 
 const loginRequest = z.object({
-    nonce: z.base64url(),
+    nonce: z.base64(),
     username: z.string(),
-    authenticatorData: z.base64url(),
-    clientDataJSON: z.base64url(),
-    signature: z.base64url(),
+    authenticatorData: z.base64(),
+    clientDataJSON: z.base64(),
+    signature: z.base64(),
 });
 
 app.post('/login', zValidator('json', loginRequest), async (c) => {

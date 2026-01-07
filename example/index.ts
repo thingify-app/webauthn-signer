@@ -3,9 +3,7 @@ import { addNodeKey, createLocalNodeKey, loadLocalNodeKeys, loadNodeKeys, reSign
 import { addRootKey, createRootKey, deleteRootKey, loadRootKeyPairs } from 'webauthn-signer';
 import { fromBase64, stringToArrayBuffer, toBase64 } from 'webauthn-signer';
 import { createVerifier as createWebCryptoVerifier } from 'webauthn-signer';
-import { InMemoryStorage, Server } from 'webauthn-signer-server';
-
-const server = new Server(new InMemoryStorage());
+import { Client } from 'webauthn-signer-client';
 
 const usernameBox = document.getElementById('username') as HTMLInputElement;
 const signUpButton = document.getElementById('signUp') as HTMLButtonElement;
@@ -49,6 +47,8 @@ populateYourAccount();
 populateTrustedNodeKeys();
 populateLocalNodeKeys();
 
+const client = new Client('http://localhost:8000');
+
 signUpButton.addEventListener('click', async () => {
     const username = usernameBox.value;
     if (username.length === 0) {
@@ -56,13 +56,13 @@ signUpButton.addEventListener('click', async () => {
         return;
     }
 
-    const nonce = await server.createAccountInitial();
-    console.log(`Received nonce for signup: ${toBase64(nonce)}`);
-
-    const initialState = await createStateInitial(username, nonce);
-
-    await server.createAccount(nonce, username, initialState.getKeyId(), initialState.getPublicKey());
-    console.log('Account created successfully!');
+    try {
+        await client.createAccount(username);
+        console.log('Account created successfully!');
+    } catch (e) {
+        alert('Account creation failed:' + e);
+        return;
+    }
 });
 
 signInButton.addEventListener('click', async () => {
@@ -72,13 +72,13 @@ signInButton.addEventListener('click', async () => {
         return;
     }
 
-    const { nonce, keyId } = await server.loginInitial(username);
-    console.log(`Received nonce for login: ${toBase64(nonce)}, keyId: ${toBase64(keyId)}`);
-
-    const result = await login(keyId, nonce);
-
-    await server.login(nonce, username, result.authenticatorData, result.clientDataJSON, result.signature);
-    console.log('Login successful!');
+    try {
+        await client.login(username);
+        console.log('Login successful!');
+    } catch (e) {
+        alert('Login failed:' + e);
+        return;
+    }
 });
 
 importStateButton.addEventListener('click', async () => {
